@@ -7,7 +7,8 @@ Database: **Chinook** (toko musik digital, lisensi terbuka, standar latihan indu
 
 ```
 agent-learning/
-├── agent.py          # agent text-to-SQL pertama Anda (~140 baris, tanpa framework)
+├── agent.py          # agent single: 3 tool + 1 loop (~140 baris) — mulai di sini
+├── agent_multi.py    # multi-agent: 3 spesialis + orkestrator + retry
 ├── README.md         # file ini — kerjakan berurutan dari atas
 └── data/
     ├── Chinook.db    # database SQLite siap pakai
@@ -47,6 +48,33 @@ dapat error → memperbaiki sendiri → menjawab. Itulah seluruh esensi "agent".
    Eksperimen: bagaimana kalau tabel jutaan baris? (petunjuk: tool `count_first`.)
 6. **Naik level: ganti ke framework** — port agent ini ke `pydantic-ai` atau
    `smolagents`. Anda akan tahu persis apa yang framework lakukan di balik layar.
+7. **Multi-agent** — jalankan `python3 agent_multi.py "Genre apa yang paling
+   banyak terjual per negara?"` lalu bandingkan dengan `agent.py`. Pelajari tiga
+   pola barunya: (a) handoff terstruktur via JSON antar agen, (b) least privilege
+   — tiap agen hanya punya tool yang ia butuhkan, (c) validator yang boleh
+   menolak karya penulis dan memicu retry beranggaran (maks 2x).
+
+## Arsitektur Multi-Agent (agent_multi.py)
+
+```
+pertanyaan -> SCHEMA ANALYST (list_tables, get_schema)
+                  | handoff JSON {tables, notes}
+                  v
+              SQL WRITER (run_query) <---- feedback (retry maks 2x)
+                  | SQL + hasil               |
+                  v                           |
+              DATA VALIDATOR (tanpa tool) ----+
+                  | verdict OK
+                  v
+              jawaban final ke user
+```
+
+Tugas latihan multi-agent:
+- Tambah agen ke-4: `SECURITY GUARD` yang memeriksa SQL sebelum dieksekusi
+- Orkestrator saat ini selalu eksekusi ulang SQL — pertimbangkan: bagaimana
+  kalau query mahal (jutaan baris)? Tambahkan hasil cache di orkestrator
+- Bandingkan token terpakai `agent.py` vs `agent_multi.py` — kapan multi-agent
+  TIDAK worth it? (jawabannya ada di pertanyaan sederhana)
 
 ## Pertanyaan Latihan untuk Agent
 
