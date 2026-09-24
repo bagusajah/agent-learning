@@ -9,11 +9,105 @@ Database: **Chinook** (toko musik digital, lisensi terbuka, standar latihan indu
 agent-learning/
 ├── agent.py          # agent single: 3 tool + 1 loop (~140 baris) — mulai di sini
 ├── agent_multi.py    # multi-agent: 3 spesialis + orkestrator + retry
+├── rag/              # PAKET RAG: dokumen -> sqlite-vec -> jawaban (lihat bawah)
 ├── README.md         # file ini — kerjakan berurutan dari atas
 └── data/
     ├── Chinook.db    # database SQLite siap pakai
-    └── Chinook_Sqlite.sql  # dump sumber (untuk reset: sqlite3 data/Chinook.db < data/Chinook_Sqlite.sql)
+    ├── Chinook_Sqlite.sql  # dump sumber (untuk reset: sqlite3 data/Chinook.db < data/Chinook_Sqlite.sql)
+    └── vectorstore/  # (di-git-ignore) chunks.db hasil `rag ingest`
 ```
+
+---
+
+# Paket RAG: Dokumen → Vector Store → Retrieval (100% lokal)
+
+Tahap ketiga learning path: setelah agent bisa MEMBACA database, sekarang dia
+belajar MENGINGAT dokumen. Vektor disimpan di **sqlite-vec** (ekstensi SQLite —
+satu file .db, tanpa server), embedding via **LM Studio** (`text-embedding-bge-m3`,
+multilingual, 1024 dim), jawaban via model chat lokal.
+
+```
+ingest : PDF/.txt/.md -> chunking (800 char, overlap 120) -> bge-m3 -> chunks.db
+search : pertanyaan -> bge-m3 -> KNN cosine (dihitung sqlite-vec, bukan Python)
+ask    : search + prompt bersitasi -> model chat LM Studio -> jawaban [1][2]
+```
+
+## Setup (sekali)
+
+1. LM Studio → tab **Developer** → **Start Server** (port 1234) dengan
+   `text-embedding-bge-m3` + satu model chat sudah di-load.
+2. Python: framework python.org di macOS tidak bisa load ekstensi SQLite,
+   jadi pakai Python Homebrew untuk venv:
+
+```bash
+/opt/homebrew/bin/python3.13 -m venv .venv
+.venv/bin/pip install -r rag/requirements.txt
+```
+
+## Pakai
+
+```bash
+cd ~/agent-learning
+.venv/bin/python -m rag ingest data/notes-example.md       # satu file
+.venv/bin/python -m rag ingest docs/                        # satu folder pdf/txt/md
+.venv/bin/python -m rag list
+.venv/bin/python -m rag search "berapa lama cuti melahirkan?" -k 3
+.venv/bin/python -m rag ask    "ringkas isi dokumen ini"
+.venv/bin/python -m rag delete data/notes-example.md
+```
+
+Peta file (baca berurutan, masing-masing < 200 baris):
+
+```
+rag/
+├── config.py      # semua konstanta: URL LM Studio, ukuran chunk, path db
+├── loaders.py     # baca PDF/teks -> potongan chunk
+├── embeddings.py  # teks -> vektor via POST /v1/embeddings
+├── store.py       # VectorStore: tabel chunks + vtable vec0, KNN SQL
+├── ingest.py      # pipeline menulis: loader -> embed -> store
+├── retrieve.py    # pipeline baca: search() dan ask() (RAG penuh)
+└── __main__.py    # CLI: ingest / list / search / ask / delete
+```
+
+## Kurikulum Mandiri (RAG)
+
+1. **Lihat store-nya langsung** — `sqlite3 data/vectorstore/chunks.db
+   "SELECT document, chunk_index, substr(content,1,60) FROM chunks LIMIT 5"`.
+   Vector store hanyalah tabel SQLite biasa + virtual table vec0.
+2. **Rasakan retrieval tanpa LLM** — bandingkan `rag search` vs `rag ask`
+   untuk pertanyaan yang sama. Kesimpulan: LLM tidak "tahu" apa pun,
+   ia hanya merangkai potongan yang ditemukan retrieval.
+3. **Eksperimen ukuran chunk** — ubah `CHUNK_SIZE`/`CHUNK_OVERLAP` di
+   `config.py`, ingest ulang, bandingkan kualitas `search`. Terlalu kecil =
+   konteks terpotong; terlalu besar = tidak fokus.
+4. **Eksperimen k** — tanya hal yang butuh fakta dari 2 halaman berbeda
+   dengan `-k 1` vs `-k 6`. Ini trade-off presisi vs cakupan.
+5. **Tes kegagalan (hallucination guard)** — tanya hal yang TIDAK ada di
+   dokumen. Prompt sudah memerintahkan "katakan tidak tahu" — apakah
+   model patuh? Kalau tidak, perkuat prompt di `retrieve.py`.
+6. **Filter per dokumen** — tambah `WHERE c.document = ?` pada query KNN
+   di `store.py` (vec0 mendukung kolom metadata & partisi — eksperimen!).
+7. **Hybrid search** — gabungkan KNN dengan `MATCH` full-text search FTS5
+   (juga bawaan SQLite). BM25 + vektor = teknik yang dipakai produk riil.
+8. **Ganti backend embedding** — endpoint sudah OpenAI-compatible; coba
+   `LMSTUDIO_BASE_URL` ke provider lain, atau tambahkan `fastembed` (lokal,
+   onnx) sebagai backend kedua di `embeddings.py`.
+
+## Hubungan dengan Modul Sebelumnya
+
+| Modul | Yang dipelajari | Analogi |
+|---|---|---|
+| `agent.py` | LLM + tools + loop | agent yang BERTANYA ke database |
+| `agent_multi.py` | handoff JSON, least privilege, validator | agent yang BERBAGI KERJA |
+| `rag/` | embedding, vector store, retrieval | agent yang MENGINGAT dokumen |
+
+Langkah alami berikutnya: gabungkan — beri agent.py tool tambahan
+`search_docs(query)` yang memanggil `rag.retrieve.search` → agent yang bisa
+bertanya ke database DAN mengingat dokumen.
+
+---
+
+# Modul Text-to-SQL (agent.py & agent_multi.py)
 
 ## Setup (sekali)
 
