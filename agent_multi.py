@@ -38,10 +38,11 @@ import sys
 from anthropic import Anthropic
 
 DB_PATH = "data/Chinook.db"
-MODEL = "claude-sonnet-4-5"
+MODEL = "model"  # model LLM untuk semua agen
+BASE_URL = "http://localhost:1234"  # URL Anthropic API (opsional, default: cloud)
 MAX_RETRIES = 2  # berapa kali validator boleh mengembalikan pekerjaan ke penulis
 
-client = Anthropic()
+client = Anthropic(base_url=BASE_URL)
 
 
 # ================================================================
@@ -72,8 +73,9 @@ def run_query(sql: str) -> str:
         return "DITOLAK: hanya SELECT yang diizinkan."
     con = sqlite3.connect(DB_PATH)
     try:
-        rows = con.execute(sql).fetchmany(50)
-        cols = [d[0] for d in con.description]
+        cur = con.execute(sql)
+        rows = cur.fetchmany(50)
+        cols = [d[0] for d in cur.description] if cur.description else []
         if not rows:
             return "(hasil kosong)"
         return " | ".join(cols) + "\n" + "\n".join(

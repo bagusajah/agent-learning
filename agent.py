@@ -21,9 +21,11 @@ import sys
 from anthropic import Anthropic
 
 DB_PATH = "data/Chinook.db"
-MODEL = "claude-sonnet-4-5"
+MODEL = "model"
+BASE_URL = "http://localhost:1234"  # URL Anthropic API (opsional, default: cloud)
+API_KEY = "none"  # ganti dengan API key
 
-client = Anthropic()  # membaca ANTHROPIC_API_KEY dari environment
+client = Anthropic(base_url=BASE_URL, api_key=API_KEY)  # membaca ANTHROPIC_API_KEY dari environment
 
 
 # ---------------------------------------------------------------
@@ -57,8 +59,9 @@ def run_query(sql: str) -> str:
         return "DITOLAK: hanya query SELECT yang diizinkan."
     con = sqlite3.connect(DB_PATH)
     try:
-        rows = con.execute(sql).fetchmany(50)  # batasi hasil agar hemat token
-        cols = [d[0] for d in con.description]
+        cur = con.execute(sql)
+        rows = cur.fetchmany(50)  # batasi hasil agar hemat token
+        cols = [d[0] for d in cur.description] if cur.description else []
         if not rows:
             return "(hasil kosong)"
         table = " | ".join(cols) + "\n" + "\n".join(
@@ -113,7 +116,7 @@ def ask(question: str, max_turns: int = 8) -> None:
     messages = [{"role": "user", "content": question}]
     for turn in range(1, max_turns + 1):
         resp = client.messages.create(
-            model=MODEL, max_tokens=1500, tools=TOOL_SPECS, messages=messages
+            model=MODEL, max_tokens=4096, tools=TOOL_SPECS, messages=messages
         )
         # tampilkan apa yang agent "pikirkan" (teks) — biar belajar dari prosesnya
         for block in resp.content:
