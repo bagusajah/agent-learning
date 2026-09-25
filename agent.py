@@ -21,7 +21,7 @@ import sys
 from anthropic import Anthropic
 
 DB_PATH = "data/Chinook.db"
-MODEL = "model"
+MODEL = "qwen/qwen3.5-9b"
 BASE_URL = "http://localhost:1234"  # URL Anthropic API (opsional, default: cloud)
 API_KEY = "none"  # ganti dengan API key
 
@@ -112,8 +112,9 @@ TOOL_SPECS = [
 # 2) LOOP: pikir -> aksi -> observasi -> ulangi -> jawab final
 # ---------------------------------------------------------------
 
-def ask(question: str, max_turns: int = 8) -> None:
+def ask(question: str, max_turns: int = 15) -> None:
     messages = [{"role": "user", "content": question}]
+    seen_queries = set()
     for turn in range(1, max_turns + 1):
         resp = client.messages.create(
             model=MODEL, max_tokens=4096, tools=TOOL_SPECS, messages=messages
@@ -131,6 +132,12 @@ def ask(question: str, max_turns: int = 8) -> None:
         results = []
         for block in resp.content:
             if block.type == "tool_use":
+                if block.name == "run_query":
+                    query_key = " ".join(block.input["sql"].split()).casefold()
+                    if query_key in seen_queries:
+                        print("  !! loop guard: query yang sama dipanggil lagi; hentikan loop.")
+                        return
+                    seen_queries.add(query_key)
                 fn = TOOLS[block.name][0]
                 out = fn(**block.input) if block.input else fn()
                 print(f"  >> {block.name}({json.dumps(block.input, ensure_ascii=False)})")
