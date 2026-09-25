@@ -123,6 +123,7 @@ def run_agent(name: str, system: str, tools: list, user_msg: str,
               max_turns: int = 6) -> str:
     """Jalankan satu agen sampai selesai; kembalikan teks finalnya."""
     messages = [{"role": "user", "content": user_msg}]
+    seen_queries = set()
     print(f"\n{'=' * 60}\n🤖 AGENT AKTIF: {name}\n{'=' * 60}")
     for turn in range(1, max_turns + 1):
         resp = client.messages.create(
@@ -139,6 +140,12 @@ def run_agent(name: str, system: str, tools: list, user_msg: str,
         results = []
         for block in resp.content:
             if block.type == "tool_use":
+                if block.name == "run_query":
+                    query_key = " ".join(block.input["sql"].split()).casefold()
+                    if query_key in seen_queries:
+                        print("  !! loop guard: query yang sama dipanggil lagi; hentikan loop.")
+                        return "(hentian: query SQL yang sama diminta dua kali)"
+                    seen_queries.add(query_key)
                 out = IMPL[block.name](**block.input)
                 print(f"  >> {block.name}({json.dumps(block.input, ensure_ascii=False)[:120]})")
                 results.append({"type": "tool_result",
